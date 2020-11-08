@@ -92,7 +92,7 @@ jobs:
     - run: git clone https://${REPO_TOKEN}@github.com/gbaeke/realtimeapp-infra.git .
       env:
         REPO_TOKEN: ${{secrets.REPO_TOKEN}}
-    - run: kustomize edit set image gbaeke/flux-rt:$(git describe --tags --abbrev=0)
+    - run: kustomize edit set image gbaeke/flux-rt:${GITHUB_REF#refs/*/}
       working-directory: ./deploy/overlays/prd
     - run: git add .
     - run: |
