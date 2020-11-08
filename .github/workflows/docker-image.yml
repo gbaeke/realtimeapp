@@ -1,0 +1,104 @@
+name: Publish Docker Image
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'deploy/**'
+  release:
+    types:
+      - published
+    
+
+jobs:
+
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v2
+
+      -
+        name: Docker meta
+        id: docker_meta
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: gbaeke/flux-rt
+          tag-sha: true
+          tag-edge: false
+
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - 
+        name: Push to Docker Hub
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          context: ./app
+          file: ./app/Dockerfile
+
+      -
+        name: Image tags
+        run: echo "${{ steps.docker_meta.outputs.tags }}"
+
+  update-dev-image:
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'heads')
+    needs:
+    - build
+    steps:
+    - uses: imranismail/setup-kustomize@v1
+      with:
+        kustomize-version: 3.8.6
+    - run: git clone https://${REPO_TOKEN}@github.com/gbaeke/realtimeapp-infra.git .
+      env:
+        REPO_TOKEN: ${{secrets.REPO_TOKEN}}
+    - run: kustomize edit set image gbaeke/flux-rt:sha-$(git rev-parse --short $GITHUB_SHA)
+      working-directory: ./deploy/overlays/dev
+    - run: git add .
+    - run: |
+        git config user.email "$EMAIL"
+        git config user.name "$GITHUB_ACTOR"
+      env:
+        EMAIL: ${{secrets.EMAIL}}
+    - run: git commit -m "Set dev image tag to short sha"
+    - run: git push
+
+  update-prd-image:
+    runs-on: ubuntu-latest
+    if: contains(github.ref, 'tags')
+    needs:
+    - build
+    steps:
+    - uses: imranismail/setup-kustomize@v1
+      with:
+        kustomize-version: 3.8.6
+    - run: git clone https://${REPO_TOKEN}@github.com/gbaeke/realtimeapp-infra.git .
+      env:
+        REPO_TOKEN: ${{secrets.REPO_TOKEN}}
+    - run: kustomize edit set image gbaeke/flux-rt:$(git describe --tags --abbrev=0)
+      working-directory: ./deploy/overlays/prd
+    - run: git add .
+    - run: |
+        git config user.email "$EMAIL"
+        git config user.name "$GITHUB_ACTOR"
+      env:
+        EMAIL: ${{secrets.EMAIL}}
+    - run: git commit -m "Set prd image tag to latest tag"
+    - run: git push
